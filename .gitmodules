@@ -1,0 +1,6 @@
+[submodule "vendor/raylib"]
+	path = vendor/raylib
+	url = https://github.com/raysan5/raylib
+[submodule "vendor/Hyprland"]
+	path = vendor/hyprland
+	url = https://github.com/hyprwm/Hyprland

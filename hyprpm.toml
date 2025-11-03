@@ -1,0 +1,12 @@
+[repository]
+name = "bongocat-linux"
+authors = ["int4_t"]
+
+[hypr_bongocat]
+description = "Bongocat linux hyprland plugin"
+authors = ["int4_t"]
+output = "build/libhypr_bongocat.so"
+build = [
+    "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release",
+	"cmake --build build"
+]
