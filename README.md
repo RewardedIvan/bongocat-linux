@@ -42,14 +42,27 @@ cd bongocat-linux
 mkdir build
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/bongocat
+```
+your binary should be in `build/bongocat`  
+
+install:
+
+```bash
 sudo cmake --install build
 ```
 
-your binary should be in `build/bongocat`  
 you can manually un/load the plugin with
 
 ```bash
 hyprctl plugin load $PWD/build/libhypr_bongocat.so
 hyprctl plugin unload $PWD/build/libhypr_bongocat.so
 ```
+
+but if you're going to be using the release build
+
+```bash
+hyprpm add https://github.com/rewardedivan/bongocat-linux
+hyprpm enable hypr_bongocat
+```
+
+hyprland wiki page on plugin dev: https://wiki.hypr.land/Plugins/Development/Getting-Started/
