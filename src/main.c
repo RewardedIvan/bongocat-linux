@@ -48,6 +48,7 @@ typedef struct {
 
 State state = {0};
 Config config = {0};
+size_t clicks = 0;
 
 int mkdir_p(const char *path, mode_t mode) {
     char tmp[PATH_MAX];
@@ -124,6 +125,7 @@ void* client_thread(void* _) {
 				state.right = state.alternate_state;
 				state.left = !state.alternate_state;
 				state.alternate_state =! state.alternate_state;
+				clicks++;
 				glfwPostEmptyEvent();
 
 				its.it_value.tv_nsec = config.paw_hold_ns;
@@ -300,6 +302,10 @@ int main(void) {
 			Vector2 origin = { screen.texture.width/2.0f, screen.texture.height/2.0f }; 
 			DrawTexturePro(screen.texture, src, dest, origin, config.rotation, WHITE);
 		}
+
+		char buf[64];
+		snprintf(buf, sizeof(buf), "%zu", clicks);
+		DrawText(buf, 0, 50, 20, RED);
 
 		if (state.not_connected) {
 			DrawText("Not connected", 100, 50, 40, RED);
