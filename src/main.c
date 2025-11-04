@@ -179,10 +179,13 @@ cls:
 void* config_thread(void* _) {
     char config_dir[PATH_MAX];
     const char* config_home = getenv("XDG_CONFIG_HOME");
-    if (!config_home) config_home = getenv("HOME");
+    if (!config_home) {
+		config_home = getenv("HOME");
+		snprintf(config_dir, sizeof(config_dir), "%s/.config/bongocatl", config_home ? config_home : ".");
+	} else {
+		snprintf(config_dir, sizeof(config_dir), "%s/bongocatl", config_home ? config_home : ".test_config/");
+	}
 
-    snprintf(config_dir, sizeof(config_dir), "%s/.config/bongocatl", 
-             config_home ? config_home : ".");
     mkdir_p(config_dir, 0755);
 
     char config_file[PATH_MAX];
