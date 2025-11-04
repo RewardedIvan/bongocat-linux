@@ -291,10 +291,6 @@ int main(void) {
 			DrawTexture(textures[i], xoff -300, (config.dark_mode ? -450 : 0) + 75, WHITE);
         }
 
-		if (state.not_connected) {
-			DrawText("Not connected", 100, 50, 40, RED);
-		}
-
 		if (config.flipped || config.rotation != 0.0f) {
 			EndTextureMode();
 
@@ -304,6 +300,11 @@ int main(void) {
 			Vector2 origin = { screen.texture.width/2.0f, screen.texture.height/2.0f }; 
 			DrawTexturePro(screen.texture, src, dest, origin, config.rotation, WHITE);
 		}
+
+		if (state.not_connected) {
+			DrawText("Not connected", 100, 50, 40, RED);
+		}
+
         EndDrawing();
     }
 
