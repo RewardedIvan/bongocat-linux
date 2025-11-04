@@ -44,6 +44,7 @@ typedef struct {
 	float rotation;
 	float scale;
 	__syscall_slong_t paw_hold_ns;
+	int window_width, window_height;
 } Config;
 
 State state = {0};
@@ -157,7 +158,9 @@ void load_config(const char* config_path) {
 	ok &= fscanf(f, "flipped = %hhu\n", &config.flipped) == 1;
 	ok &= fscanf(f, "rotation = %f\n", &config.rotation) == 1;
 	ok &= fscanf(f, "scale = %f\n", &config.scale) == 1;
-	ok &= fscanf(f, "paw_hold_ns = %ld", &config.paw_hold_ns) == 1;
+	ok &= fscanf(f, "paw_hold_ns = %ld\n", &config.paw_hold_ns) == 1;
+	ok &= fscanf(f, "window_width = %d\n", &config.window_width) == 1;
+	ok &= fscanf(f, "window_height = %d", &config.window_height) == 1;
 
 	if (!ok)
 		goto rewrite;
@@ -170,7 +173,9 @@ rewrite:
 	fprintf(f, "flipped = %hhu\n", config.flipped);
 	fprintf(f, "rotation = %f\n", config.rotation);
 	fprintf(f, "scale = %f\n", config.scale);
-	fprintf(f, "paw_hold_ns = %ld", config.paw_hold_ns);
+	fprintf(f, "paw_hold_ns = %ld\n", config.paw_hold_ns);
+	fprintf(f, "window_width = %d\n", config.window_width);
+	fprintf(f, "window_height = %d", config.window_height);
 	fflush(f);
 	ftruncate(fileno(f), ftell(f));
 cls:
@@ -234,17 +239,16 @@ void* config_thread(void* _) {
     return NULL;
 }
 
-#define screenWidth 550
-#define screenHeight 550
-
 int main(void) {
-    // Init window
-	SetConfigFlags(FLAG_WINDOW_TRANSPARENT);
-    InitWindow(screenWidth, screenHeight, "bongocatl");
-	EnableEventWaiting();
-
+	config.window_width = 550;
+	config.window_height = 550;
 	config.scale = 1.0f;
 	config.paw_hold_ns = 50000000;
+
+    // Init window
+	SetConfigFlags(FLAG_WINDOW_TRANSPARENT);
+    InitWindow(config.window_width, config.window_height, "bongocatl");
+	EnableEventWaiting();
 
     // Load textures
     Texture2D textures[FILES_LEN];
@@ -265,15 +269,24 @@ int main(void) {
         }
     }
 
+	int last_wwidth = config.window_width, last_wheight = config.window_height;
+	RenderTexture2D screen = LoadRenderTexture(config.window_width, config.window_height);
+
 	// UDS thread
 	pthread_t client_tid, config_tid;
 	pthread_create(&client_tid, NULL, client_thread, NULL);
 	pthread_create(&config_tid, NULL, config_thread, NULL);
 
-	RenderTexture2D screen = LoadRenderTexture(screenWidth, screenHeight);
-
     while (!WindowShouldClose()) {
-		SetWindowSize(screenWidth, screenHeight);
+		if (config.window_width != last_wwidth || config.window_height != last_wheight) {
+			UnloadRenderTexture(screen);
+			screen = LoadRenderTexture(config.window_width, config.window_height);
+			last_wwidth = config.window_width;
+			last_wheight = config.window_height;
+		}
+
+		SetWindowSize(config.window_width, config.window_height);
+
         BeginDrawing();
         ClearBackground(CLITERAL(Color){0, 0, 0, 0});
 		if (config.flipped || config.rotation != 0.0f) {
@@ -298,7 +311,7 @@ int main(void) {
 
 			int sign = config.flipped ? -1 : 1;
 			Rectangle src = { screen.texture.width, screen.texture.height, sign * screen.texture.width, -screen.texture.height }; 
-			Rectangle dest = { screenWidth/2.0f, screenHeight/2.0f, screen.texture.width * config.scale, screen.texture.height * config.scale };
+			Rectangle dest = { ((float)config.window_width)/2.0f, ((float)config.window_height)/2.0f, screen.texture.width * config.scale, screen.texture.height * config.scale };
 			Vector2 origin = { screen.texture.width/2.0f, screen.texture.height/2.0f }; 
 			DrawTexturePro(screen.texture, src, dest, origin, config.rotation, WHITE);
 		}

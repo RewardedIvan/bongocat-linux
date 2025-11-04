@@ -20,6 +20,8 @@ flipped = 1
 rotation = 15.000000
 scale = 0.50000
 paw_hold_ns = 50000000
+window_width = 550
+window_height = 540
 ```
 
 ## config
