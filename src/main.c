@@ -35,6 +35,7 @@ typedef struct {
 	unsigned int right : 2;
 	unsigned int alternate_state : 3;
 	unsigned int not_connected : 4;
+	unsigned int save_icon : 5;
 } State;
 
 typedef struct {
@@ -51,6 +52,11 @@ typedef struct {
 	Vector2 clicks_pos;
 	uint32_t clicks_color;
 	float clicks_horizontal_alignment;
+	uint8_t save_clicks;
+	__syscall_slong_t save_interval_us;
+	__syscall_slong_t save_icon_timeout_ns;
+	int save_icon_pos_x;
+	int save_icon_pos_y;
 } Config;
 
 #define CONFIG_FIELDS(X, X_STR) \
@@ -69,10 +75,16 @@ typedef struct {
 	X("clicks_pos_x = %f", clicks_pos.x) \
 	X("clicks_pos_y = %f", clicks_pos.y) \
 	X("clicks_color = 0x%X", clicks_color) \
-	X("clicks_horizontal_alignment = %f", clicks_horizontal_alignment)
+	X("clicks_horizontal_alignment = %f", clicks_horizontal_alignment) \
+	X("save_clicks = %hhu", save_clicks) \
+	X("save_interval_us = %ld", save_interval_us) \
+	X("save_icon_timeout_ns = %ld", save_icon_timeout_ns) \
+	X("save_icon_pos_x = %d", save_icon_pos_x) \
+	X("save_icon_pos_y = %d", save_icon_pos_y) \
 
 State state = {0};
 Config config = {0};
+char config_dir[PATH_MAX];
 size_t clicks = 0;
 
 int mkdir_p(const char *path, mode_t mode) {
@@ -166,6 +178,8 @@ void* client_thread(void* _) {
 	return NULL;
 }
 
+void save_clicks();
+
 void load_config(const char* config_path) {
 	bool didnt_exist = access(config_path, F_OK) != 0;
 
@@ -205,20 +219,10 @@ rewrite:
 cls:
 	fclose(f);
 	glfwPostEmptyEvent();
+	save_clicks();
 }
 
 void* config_thread(void* _) {
-    char config_dir[PATH_MAX];
-    const char* config_home = getenv("XDG_CONFIG_HOME");
-    if (!config_home) {
-		config_home = getenv("HOME");
-		snprintf(config_dir, sizeof(config_dir), "%s/.config/bongocatl", config_home ? config_home : ".");
-	} else {
-		snprintf(config_dir, sizeof(config_dir), "%s/bongocatl", config_home ? config_home : ".test_config/");
-	}
-
-    mkdir_p(config_dir, 0755);
-
     char config_file[PATH_MAX];
     snprintf(config_file, sizeof(config_file), "%s/cat.conf", config_dir);
 
@@ -263,6 +267,53 @@ void* config_thread(void* _) {
     return NULL;
 }
 
+timer_t save_timer;
+
+void save_icon_timer(union sigval arg) {
+	state.save_icon = 0;
+	glfwPostEmptyEvent();
+}
+
+char save_file[PATH_MAX];
+
+void save_clicks() {
+	// open
+	FILE* f = fopen(save_file, "wb+");
+	if (!f) perror("fopen");
+	// write
+	fwrite(&clicks, sizeof(clicks), 1, f);
+	ftruncate(fileno(f), ftell(f));
+	// close
+	rewind(f);
+	fclose(f);
+
+	state.save_icon = 1;
+	glfwPostEmptyEvent();
+
+	struct itimerspec its = {0};
+	its.it_value.tv_nsec = config.save_icon_timeout_ns;
+	timer_settime(save_timer, 0, &its, NULL);
+}
+
+void* save_thread(void* _) {
+	struct sigevent sev = {0};
+    sev.sigev_notify = SIGEV_THREAD;
+    sev.sigev_notify_function = save_icon_timer;
+
+    timer_create(CLOCK_REALTIME, &sev, &save_timer);
+
+	while (true) {
+		usleep(config.save_interval_us);
+		save_clicks();
+	}
+}
+
+#ifdef NDEBUG
+#define get_asset_path(path, asset) snprintf(path, sizeof(path), "%s/%s", ASSETS_DIR, asset);
+#else
+#define get_asset_path(path, asset) strcpy(path, asset);
+#endif
+
 int main(void) {
 	config.window_width = 550;
 	config.window_height = 550;
@@ -272,6 +323,32 @@ int main(void) {
 	config.font_size = 20.0f;
 	config.text_spacing = 1.0f;
 	config.clicks_horizontal_alignment = 1.0f;
+	config.save_interval_us = 60e+6;
+	config.save_icon_timeout_ns = 1e+8;
+
+	{
+		const char* config_home = getenv("XDG_CONFIG_HOME");
+		const char* fmt = NULL;
+
+		if (!config_home) {
+			config_home = getenv("HOME");
+			fmt = "%s/.config/bongocatl";
+		} else {
+			fmt = "%s/bongocatl";
+		}
+
+		snprintf(config_dir, sizeof(config_dir), fmt, config_home ? config_home : ".test_config/");
+		mkdir_p(config_dir, 0755);
+
+		snprintf(save_file, sizeof(save_file), "%s/clicks", config_dir);
+
+		FILE* f = fopen(save_file, "rb+");
+		if (!f) perror("fopen");
+		else {
+			fread(&clicks, sizeof(clicks), 1, f);
+			fclose(f);
+		}
+	}
 
     // Init window
 	SetConfigFlags(FLAG_WINDOW_TRANSPARENT);
@@ -283,12 +360,7 @@ int main(void) {
     for (uint8_t i = 0; i < FILES_LEN; i++) {
 		char path[PATH_MAX];
 
-#ifdef NDEBUG
-		snprintf(path, sizeof(path), "%s/%s", ASSETS_DIR, files[i]);
-#else
-		strcpy(path, files[i]);
-#endif
-
+		get_asset_path(path, files[i]);
         textures[i] = LoadTexture(path);
 
         if (textures[i].id == 0) {
@@ -296,6 +368,19 @@ int main(void) {
             return -1;
         }
     }
+
+    Texture2D save_icon_texture;
+	{
+		char path[PATH_MAX];
+		get_asset_path(path, "assets/save.png");
+
+		save_icon_texture = LoadTexture(path);
+
+        if (save_icon_texture.id == 0) {
+            CloseWindow();
+            return -2;
+        }
+	}
 
 	int last_wwidth = config.window_width,
 		last_wheight = config.window_height;
@@ -306,7 +391,8 @@ int main(void) {
 	RenderTexture2D screen = LoadRenderTexture(config.window_width, config.window_height);
 
 	// UDS thread
-	pthread_t client_tid, config_tid;
+	pthread_t client_tid, config_tid, save_tid;
+	pthread_create(&save_tid, NULL, save_thread, NULL);
 	pthread_create(&client_tid, NULL, client_thread, NULL);
 	pthread_create(&config_tid, NULL, config_thread, NULL);
 
@@ -374,6 +460,10 @@ int main(void) {
 			DrawTextEx(font, str, textPos, config.font_size, config.text_spacing, *((struct Color*)&config.clicks_color));
 		}
 
+		if (state.save_icon && config.save_icon_timeout_ns != 0) {
+			DrawTexture(save_icon_texture, config.save_icon_pos_x, config.save_icon_pos_y, WHITE);
+		}
+
 		if (state.not_connected) {
 			DrawText("Not connected", 100, 50, 40, RED);
 		}
@@ -381,10 +471,18 @@ int main(void) {
         EndDrawing();
     }
 
+	save_clicks();
+
     // Unload textures
     for (uint8_t i = 0; i < FILES_LEN; i++) {
         UnloadTexture(textures[i]);
     }
+
+	UnloadTexture(save_icon_texture);
+
+	// pthread_join(save_tid, NULL);
+	// pthread_join(client_tid, NULL);
+	// pthread_join(config_tid, NULL);
 
     CloseWindow();
     return 0;
