@@ -12,24 +12,19 @@ windowrulev2 = pin,title:^(bongocatl)$
 exec-once = bongocat
 ```
 
-## my bongocat config
-```ini
-dark_mode = 1
-alt_mouth = 0
-flipped = 1
-rotation = 15.000000
-scale = 0.50000
-paw_hold_ns = 50000000
-window_width = 550
-window_height = 540
-```
-
 ## config
 
 the config file is at `~/.config/bongocatl/cat.conf`  
 it will get created if it doesn't exist.  
-please don't change the order because it will break and rewrite the entire file.  
-you can edit it while bongocat is open and it will change immediately.
+please don't change the (line) order because it will break and override the entire file with defaults.  
+you can edit it while bongocat is open and it will change immediately.  
+you can use `font_path = ` for raylib's default font.
+`clicks_color` is a hex formatted 32-bit ABGR color.  
+`clicks_horizontal_alignment` is either:
+- `0` for left (digits grow to the right)
+- `1` for center (digits grow towards the sides)
+- `2` for right (digits grow to the left)
+- and anything else will have weird behavior.
 
 ## build
 

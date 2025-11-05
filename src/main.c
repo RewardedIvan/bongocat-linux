@@ -45,7 +45,31 @@ typedef struct {
 	float scale;
 	__syscall_slong_t paw_hold_ns;
 	int window_width, window_height;
+	uint8_t show_clicks;
+	char font_path[PATH_MAX];
+	float font_size, text_spacing;
+	Vector2 clicks_pos;
+	uint32_t clicks_color;
+	float clicks_horizontal_alignment;
 } Config;
+
+#define CONFIG_FIELDS(X, X_STR) \
+	X("dark_mode = %hhu", dark_mode) \
+	X("alt_mouth = %hhu", alt_mouth) \
+	X("flipped = %hhu", flipped) \
+	X("rotation = %f", rotation) \
+	X("scale = %f", scale) \
+	X("paw_hold_ns = %ld", paw_hold_ns) \
+	X("window_width = %d", window_width) \
+	X("window_height = %d", window_height) \
+	X_STR("font_path = %4095[^\n]", "font_path = %s", font_path) \
+	X("font_size = %f", font_size) \
+	X("text_spacing = %f", text_spacing) \
+	X("show_clicks = %hhu", show_clicks) \
+	X("clicks_pos_x = %f", clicks_pos.x) \
+	X("clicks_pos_y = %f", clicks_pos.y) \
+	X("clicks_color = 0x%X", clicks_color) \
+	X("clicks_horizontal_alignment = %f", clicks_horizontal_alignment)
 
 State state = {0};
 Config config = {0};
@@ -152,15 +176,19 @@ void load_config(const char* config_path) {
 	if (didnt_exist)
 		goto rewrite;
 
+	char line[4096];
+
 	bool ok = 1;
-	ok &= fscanf(f, "dark_mode = %hhu\n", &config.dark_mode) == 1;
-	ok &= fscanf(f, "alt_mouth = %hhu\n", &config.alt_mouth) == 1;
-	ok &= fscanf(f, "flipped = %hhu\n", &config.flipped) == 1;
-	ok &= fscanf(f, "rotation = %f\n", &config.rotation) == 1;
-	ok &= fscanf(f, "scale = %f\n", &config.scale) == 1;
-	ok &= fscanf(f, "paw_hold_ns = %ld\n", &config.paw_hold_ns) == 1;
-	ok &= fscanf(f, "window_width = %d\n", &config.window_width) == 1;
-	ok &= fscanf(f, "window_height = %d", &config.window_height) == 1;
+
+#define CFG_LOAD(fmt, var) ok &= fscanf(f, fmt "\n", &config.var) == 1;
+#define CFG_LOAD_STR(fmt2, fmt, var) \
+	ok &= fgets(line, sizeof(line), f) != NULL; \
+	if (ok) { \
+		if (sscanf(line, fmt2, config.var) != 1) \
+			config.font_path[0] = '\0'; \
+	}
+
+	CONFIG_FIELDS(CFG_LOAD, CFG_LOAD_STR)
 
 	if (!ok)
 		goto rewrite;
@@ -168,14 +196,10 @@ void load_config(const char* config_path) {
 	goto cls;
 rewrite:
 	rewind(f);
-	fprintf(f, "dark_mode = %hhu\n", config.dark_mode);
-	fprintf(f, "alt_mouth = %hhu\n", config.alt_mouth);
-	fprintf(f, "flipped = %hhu\n", config.flipped);
-	fprintf(f, "rotation = %f\n", config.rotation);
-	fprintf(f, "scale = %f\n", config.scale);
-	fprintf(f, "paw_hold_ns = %ld\n", config.paw_hold_ns);
-	fprintf(f, "window_width = %d\n", config.window_width);
-	fprintf(f, "window_height = %d", config.window_height);
+#define CFG_WRITE(fmt, var) fprintf(f, fmt "\n", (config.var));
+#define CFG_WRITE_STR(fmt2, fmt, var) fprintf(f, fmt "\n", (config.var));
+	CONFIG_FIELDS(CFG_WRITE, CFG_WRITE_STR)
+
 	fflush(f);
 	ftruncate(fileno(f), ftell(f));
 cls:
@@ -244,6 +268,10 @@ int main(void) {
 	config.window_height = 550;
 	config.scale = 1.0f;
 	config.paw_hold_ns = 50000000;
+	config.font_path[0] = '\0';
+	config.font_size = 20.0f;
+	config.text_spacing = 1.0f;
+	config.clicks_horizontal_alignment = 1.0f;
 
     // Init window
 	SetConfigFlags(FLAG_WINDOW_TRANSPARENT);
@@ -269,7 +297,12 @@ int main(void) {
         }
     }
 
-	int last_wwidth = config.window_width, last_wheight = config.window_height;
+	int last_wwidth = config.window_width,
+		last_wheight = config.window_height;
+	char current_font[PATH_MAX];
+	current_font[0] = '\0';
+	Font font = GetFontDefault();
+
 	RenderTexture2D screen = LoadRenderTexture(config.window_width, config.window_height);
 
 	// UDS thread
@@ -285,11 +318,25 @@ int main(void) {
 			last_wheight = config.window_height;
 		}
 
+		if (strcmp(current_font, config.font_path) != 0) {
+			// printf("current: '%s', config: '%s'\n", current_font, config.font_path);
+			if (current_font[0] != '\0') {
+				UnloadFont(font);
+			}
+
+			if (config.font_path[0] == '\0') {
+				font = GetFontDefault();
+			} else {
+				font = LoadFont(config.font_path);
+			}
+			strncpy(current_font, config.font_path, sizeof(current_font));
+		}
+
 		SetWindowSize(config.window_width, config.window_height);
 
         BeginDrawing();
-        ClearBackground(CLITERAL(Color){0, 0, 0, 0});
-		if (config.flipped || config.rotation != 0.0f) {
+		bool useFb = config.flipped || config.rotation != 0.0f || config.scale != 1.0f;
+		if (useFb) {
 			BeginTextureMode(screen);
 		}
         ClearBackground(CLITERAL(Color){0, 0, 0, 0});
@@ -306,8 +353,9 @@ int main(void) {
 			DrawTexture(textures[i], xoff -300, (config.dark_mode ? -450 : 0) + 75, WHITE);
         }
 
-		if (config.flipped || config.rotation != 0.0f) {
+		if (useFb) {
 			EndTextureMode();
+			ClearBackground(CLITERAL(Color){0, 0, 0, 0});
 
 			int sign = config.flipped ? -1 : 1;
 			Rectangle src = { screen.texture.width, screen.texture.height, sign * screen.texture.width, -screen.texture.height }; 
@@ -316,9 +364,15 @@ int main(void) {
 			DrawTexturePro(screen.texture, src, dest, origin, config.rotation, WHITE);
 		}
 
-		char buf[64];
-		snprintf(buf, sizeof(buf), "%zu", clicks);
-		DrawText(buf, 0, 50, 20, RED);
+		if (config.show_clicks) {
+			const char* str = TextFormat("%zu", clicks);
+			Vector2 textSize = MeasureTextEx(font, str, config.font_size, config.text_spacing);
+            Vector2 textPos = (Vector2) {
+                config.clicks_pos.x + (-textSize.x * (config.clicks_horizontal_alignment * 0.5f)),
+                config.clicks_pos.y + (-textSize.y * 0.5)
+            };
+			DrawTextEx(font, str, textPos, config.font_size, config.text_spacing, *((struct Color*)&config.clicks_color));
+		}
 
 		if (state.not_connected) {
 			DrawText("Not connected", 100, 50, 40, RED);
